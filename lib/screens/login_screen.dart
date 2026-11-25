@@ -6,6 +6,8 @@ import 'dart:async';
 //5.1 Importar Firebase Auth y la pantalla de productos
 import 'package:firebase_auth/firebase_auth.dart';
 import 'products_screen.dart';
+
+import 'sing_up_screen.dart';
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -35,26 +37,8 @@ class _LoginScreenState extends State<LoginScreen> {
   final emailCtrl = TextEditingController();
   final passCtrl = TextEditingController();
 
-  //4.2 Erroes para mostrar la UI
-  String? emailError;
-  String? passError;
-
   //5.2 Variable para mostrar el CircularProgressIndicator mientras carga
   bool _isLoading = false;
-
-   // 4.3 Validadores
-  bool isValidEmail(String email) {
-    final re = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
-    return re.hasMatch(email);
-  }
-
-  bool isValidPassword(String pass) {
-    // mínimo 8, una mayúscula, una minúscula, un dígito y un especial
-    final re = RegExp(
-      r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$',
-    );
-    return re.hasMatch(pass);
-  }
 
     //4.4 Dar acción al botón
   //5.3 Convertir _onLogin en asíncrono (Future<void> ... async)
@@ -63,16 +47,6 @@ class _LoginScreenState extends State<LoginScreen> {
     final email = emailCtrl.text.trim();
     final pass = passCtrl.text;
 
-    //4.6 Evaluar los errores
-    final eError = isValidEmail(email) ? null : "Invalid email";
-    final pError = isValidPassword(pass) ? null : "Invalid password";
-
-    //4.7 Avisar que hubo cambios
-    setState(() {
-      emailError = eError;
-      passError = pError;
-    });
-
     //4.8 Cerrar el teclado y bajar las manos
     FocusScope.of(context).unfocus(); //Quita el foco
     _typingDebounce?.cancel();
@@ -80,9 +54,11 @@ class _LoginScreenState extends State<LoginScreen> {
     _isHandsUp?.change(false);
     _numLook?.value = 50.0;
 
-    //4.9 Si algún campo tiene formato inválido, activar fallo y detener aquí
-    if (eError != null || pError != null) {
+    if (email.isEmpty || pass.isEmpty) {
       _trigFail?.fire();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Completa el correo y la contraseña')),
+      );
       return;
     }
 
@@ -116,11 +92,72 @@ class _LoginScreenState extends State<LoginScreen> {
       //5.8 Si Firebase rechaza el login, apagar loading y mostrar al osito triste
       setState(() {
         _isLoading = false;
-        passError = "Credenciales incorrectas en Firebase";
       });
       _trigFail?.fire();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Credenciales incorrectas en Firebase')),
+      );
     }
   }
+
+  Future<void> _showForgotPasswordDialog() async {
+    final TextEditingController resetEmailController = TextEditingController(
+      text: emailCtrl.text.trim(),
+    );
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Recuperar contraseña'),
+          content: TextField(
+            controller: resetEmailController,
+            keyboardType: TextInputType.emailAddress,
+            decoration: const InputDecoration(
+              labelText: 'Correo electrónico',
+              hintText: 'ejemplo@correo.com',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final email = resetEmailController.text.trim();
+                if (email.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Ingresa un correo válido')),
+                  );
+                  return;
+                }
+
+                try {
+                  await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+                  if (!mounted) return;
+                  Navigator.of(dialogContext).pop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Correo de recuperación enviado a $email'),
+                    ),
+                  );
+                } on FirebaseAuthException catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(e.message ?? 'Error al enviar el correo')),
+                  );
+                }
+              },
+              child: const Text('Enviar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Obtener el tamaño de la pantalla del dispositivo
@@ -190,8 +227,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     });
                   },
                   decoration: InputDecoration(
-                    //4.9 Mostrar el texto de error
-                    errorText: emailError,
                     hintText: "Email",
                     prefixIcon: const Icon(Icons.email),
                     border: OutlineInputBorder(
@@ -220,8 +255,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   },
                   obscureText: _isObscure,
                   decoration: InputDecoration(
-                    //4.9 Mostrar el texto de error
-                    errorText: passError,
                     hintText: "Password",
                     prefixIcon: const Icon(Icons.lock),
                     suffixIcon: IconButton(
@@ -245,12 +278,18 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 10),
                 SizedBox(
                   width: size.width,
-                  child: const Text(
-                    "Forgot password?",
-                    textAlign: TextAlign.right,
-                    style: TextStyle(decoration: TextDecoration.underline),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: _showForgotPasswordDialog,
+                      child: const Text(
+                        "Forgot password?",
+                        textAlign: TextAlign.right,
+                        style: TextStyle(decoration: TextDecoration.underline),
+                      ),
+                    ),
                   ),
-                  ),
+                ),
                 const SizedBox(height: 10),
                 MaterialButton(
                   minWidth: size.width,
@@ -274,9 +313,14 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Text("Don't have an account"),
-                        TextButton(
-                          onPressed: () {},
+                        const Text("¿No tienes cuenta?"),
+                                                TextButton(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const SignUpScreen()),
+                            );
+                          },
                           child: const Text(
                             "Register",
                             style: TextStyle(
@@ -285,8 +329,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-
-                          ),
+                        ),
                        ],
                       ),
                   ),
